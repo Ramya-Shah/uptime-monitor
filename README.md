@@ -124,6 +124,32 @@ From this PC, an 800 ms gate fails on distance alone. A CI runner in the US is m
 
 **Image:** 22.9 MB. Inside Docker the monitor checks its own health with `verify` against `/healthz`, since the image has no shell or curl.
 
+## Deployment
+
+The monitor runs on a GCP **e2-micro** VM in **us-east1-b** (project `ramya-uptime-monitor`). It uses Debian 12 and the same `docker-compose.yml`, and the status page is public at http://35.185.46.96.
+
+- **Region:** us-east1, not us-central1 where TaskForge and CodePulse run, so one regional outage can't take down both a site and its monitor.
+- **Setup:** a startup script installs Docker from Docker's apt repo and adds 1 GB of swap. The image is built locally, copied with `docker save | gzip` (5.2 MB), and loaded on the VM. The VM's `.env` (DB password, `MONITOR_LISTEN=0.0.0.0:80`) is generated on the VM and never leaves it.
+- **Network:** a firewall rule opens only TCP 80 (tag `uptime-web`). Postgres is bound to localhost.
+- **Measured on the VM:**
+  - Memory: monitor 10.6 MiB, Postgres 40 MiB.
+  - Shutdown: a SIGTERM during an in-flight 10 s check waited for it, logged its result, then printed `stopped cleanly`.
+  - Reboot: after a reboot, both containers came back by themselves (`restart: unless-stopped`).
+- **Cost:** about $10/month (e2-micro ~$6.1, external IP ~$3.65, 10 GB pd-standard $0.40). It's not free-tier because the billing account's one free e2-micro already runs CodePulse, so it's paid from trial credits for now.
+
+Update after a change:
+```bash
+docker compose build monitor && docker save uptime-monitor:local | gzip > um.tar.gz
+gcloud compute scp um.tar.gz sites.yaml uptime-monitor:/tmp/ --project ramya-uptime-monitor --zone us-east1-b
+gcloud compute ssh uptime-monitor --project ramya-uptime-monitor --zone us-east1-b --command \
+  'cd /opt/uptime-monitor && sudo mv /tmp/sites.yaml . && gunzip -c /tmp/um.tar.gz | sudo docker load && sudo docker compose up -d --no-build'
+```
+
+Remove everything (VM, disk, IP, firewall):
+```bash
+gcloud projects delete ramya-uptime-monitor
+```
+
 ## Configuration
 
 | Env var | Used by | Default |
