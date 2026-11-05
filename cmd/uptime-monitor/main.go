@@ -1,10 +1,12 @@
-// Command uptime-monitor checks a list of sites on an interval.
+// Command uptime-monitor checks a list of sites on an interval,
+// stores results in Postgres and serves a JSON API.
 //
-//	uptime-monitor run -config sites.yaml
+//	uptime-monitor run -config sites.yaml   (needs DATABASE_URL)
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,9 +14,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/Ramya-Shah/uptime-monitor/internal/api"
 	"github.com/Ramya-Shah/uptime-monitor/internal/checker"
 	"github.com/Ramya-Shah/uptime-monitor/internal/config"
+	"github.com/Ramya-Shah/uptime-monitor/internal/store"
 )
 
 func main() {
@@ -39,8 +44,13 @@ func main() {
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cfgPath := fs.String("config", envOr("CONFIG_PATH", "sites.yaml"), "path to sites YAML")
+	addr := fs.String("addr", envOr("ADDR", ":8080"), "HTTP listen address")
 	fs.Parse(args)
 
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return errors.New("DATABASE_URL is not set")
+	}
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err
@@ -51,13 +61,28 @@ func run(args []string) error {
 	defer stop()
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	log.Info("starting", "sites", len(cfg.Sites))
+
+	st, err := store.Open(ctx, dbURL)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	srv := &http.Server{Addr: *addr, Handler: api.New(st, cfg.Sites), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("http server", "err", err)
+			stop() // can't serve the API: shut the whole process down
+		}
+	}()
+	log.Info("starting", "sites", len(cfg.Sites), "addr", *addr)
 
 	results := make(chan checker.Result)
-	go checker.Run(ctx, &http.Client{}, cfg.Sites, results)
+	go checker.Run(ctx, checker.NewClient(), cfg.Sites, results)
 
-	// Drain until Run closes the channel, which happens only after
-	// every in-flight check has finished.
+	// Drain until Run closes the channel (after in-flight checks finish).
+	// Inserts use their own short timeout, not ctx, so the last results
+	// are still saved during shutdown.
 	for r := range results {
 		attrs := []any{"site", r.Site, "status", r.Status, "latency_ms", r.Latency.Milliseconds(), "ok", r.OK}
 		if r.OK {
@@ -65,6 +90,17 @@ func run(args []string) error {
 		} else {
 			log.Warn("check", append(attrs, "err", r.Err)...)
 		}
+		ictx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := st.Insert(ictx, r); err != nil {
+			log.Error("store", "err", err)
+		}
+		cancel()
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil { // waits for open API requests
+		return err
 	}
 	log.Info("stopped cleanly")
 	return nil

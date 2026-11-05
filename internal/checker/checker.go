@@ -20,6 +20,19 @@ type Result struct {
 	Err     string
 }
 
+// NewClient returns the HTTP client checks should use. Keep-alives are off so
+// every check opens a fresh connection: pooled HTTP/2 connections that sat idle
+// between checks were silently dropped and the next check hung until its timeout
+// (measured: 3/8 false failures with keep-alive, 0/8 without). A fresh connection
+// also means latency includes DNS + TLS, like a real first visit.
+func NewClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:             http.ProxyFromEnvironment,
+		DisableKeepAlives: true,
+		ForceAttemptHTTP2: true,
+	}}
+}
+
 // Check does one GET with its own timeout. 2xx and 3xx count as up.
 func Check(ctx context.Context, client *http.Client, s config.Site) Result {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)

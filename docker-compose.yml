@@ -1,0 +1,19 @@
+# Local dev database. Password comes from .env (see .env.example), never from the repo.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: uptime
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: uptime
+    ports:
+      - "127.0.0.1:5433:5432" # 5433 so it doesn't clash with other local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "uptime"]
+      interval: 2s
+      retries: 15
+
+volumes:
+  pgdata:
