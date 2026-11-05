@@ -1,4 +1,6 @@
-# Local dev database. Password comes from .env (see .env.example), never from the repo.
+# Monitor + Postgres. The password comes from .env (see .env.example), never from the repo.
+#   docker compose up -d --build      start both
+#   docker compose up -d db           only the database (for `go run` / tests)
 services:
   db:
     image: postgres:16-alpine
@@ -14,6 +16,28 @@ services:
       test: ["CMD", "pg_isready", "-U", "uptime"]
       interval: 2s
       retries: 15
+    restart: unless-stopped
+
+  monitor:
+    build: .
+    image: uptime-monitor:local
+    environment:
+      DATABASE_URL: postgres://uptime:${POSTGRES_PASSWORD}@db:5432/uptime?sslmode=disable
+    ports:
+      # Local default: only this machine. On the VM, .env sets MONITOR_LISTEN=0.0.0.0:80.
+      - "${MONITOR_LISTEN:-127.0.0.1:8080}:8080"
+    volumes:
+      - ./sites.yaml:/etc/uptime-monitor/sites.yaml:ro # edit + restart, no rebuild
+    depends_on:
+      db:
+        condition: service_healthy
+    # The image has no shell or curl, so the monitor checks itself with its own verify command.
+    healthcheck:
+      test: ["CMD", "/uptime-monitor", "verify", "--url", "http://localhost:8080/healthz", "--checks", "1", "--max-p95", "2s"]
+      interval: 30s
+      timeout: 10s
+    stop_grace_period: 20s # SIGTERM, then up to 20 s for in-flight checks before SIGKILL
+    restart: unless-stopped
 
 volumes:
   pgdata:

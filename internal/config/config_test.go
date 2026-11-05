@@ -39,7 +39,10 @@ func TestLoadRealConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Sites) != 4 || c.Sites[2].Interval != time.Minute {
-		t.Errorf("unexpected config: %+v", c.Sites)
+	// The shipped file must parse, and every site must get sane timing.
+	for _, s := range c.Sites {
+		if s.Interval < 30*time.Second || s.Timeout <= 0 {
+			t.Errorf("site %s: interval %v timeout %v", s.Name, s.Interval, s.Timeout)
+		}
 	}
 }

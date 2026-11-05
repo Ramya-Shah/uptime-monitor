@@ -1,16 +1,62 @@
 # Sites the monitor checks. interval and timeout are Go durations ("30s", "1m").
 # Defaults: interval 30s, timeout 10s.
+# Main products every 30 s; smaller projects every 60 s.
 sites:
+  # --- main products ---
   - name: snap-to-pay
     url: https://snap-to-pay.vercel.app
     interval: 30s
   - name: codepulse
-    url: https://codepulse-app.duckdns.org/health
+    url: https://codepulse-app.duckdns.org/health # backend; checks its DB too
     interval: 30s
     timeout: 15s # e2-micro backend; first probe took ~5 s
+  - name: codepulse-web
+    url: https://codepulse-live.vercel.app
+    interval: 60s
+  - name: codepulse-dashboard
+    url: https://codepulse-codepulse-dashboard.vercel.app
+    interval: 60s
   - name: oauth-ready
     url: https://oauth-ready-ten.vercel.app
     interval: 60s
   - name: taskforge
     url: https://taskforge.136.80.52.40.sslip.io/healthz
     interval: 30s
+  - name: wind-forecast
+    url: https://wind-forecast-monitor-zeta.vercel.app/api/health # runs the Python function
+    interval: 60s
+  - name: portfolio
+    url: https://ramya-umber.vercel.app
+    interval: 60s
+
+  # --- other projects linked from the portfolio or GitHub ---
+  - name: unspoof
+    url: https://unspoof.vercel.app
+    interval: 60s
+  - name: voicerai
+    url: https://voicerai.vercel.app
+    interval: 60s
+  - name: parkit
+    url: https://parkit-olive.vercel.app
+    interval: 60s
+  - name: decentralised-identity
+    url: https://decentralised-identity-two.vercel.app
+    interval: 60s
+  - name: url-shortener
+    url: https://shortener-ramya.duckdns.org
+    interval: 60s
+  - name: user-management-api
+    url: https://user-management-api-five.vercel.app
+    interval: 60s
+  - name: task-management
+    url: https://task-management-kappa-rust.vercel.app
+    interval: 60s
+  - name: blogging-app
+    url: https://blogging-app-beta-seven.vercel.app
+    interval: 60s
+  - name: email-tracker
+    url: https://email-tracker-sable.vercel.app # 307 -> /login, followed
+    interval: 60s
+  - name: pagination-nextjs
+    url: https://pagination-rust-alpha.vercel.app
+    interval: 60s
