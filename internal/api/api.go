@@ -27,6 +27,7 @@ func New(st *store.Store, sites []config.Site) http.Handler {
 	mux.HandleFunc("GET /api/sites", s.listSites)
 	mux.HandleFunc("GET /api/sites/{name}/stats", s.siteStats)
 	mux.HandleFunc("GET /healthz", s.healthz)
+	mux.HandleFunc("GET /{$}", s.statusPage) // {$} = exactly "/", not every path
 	return mux
 }
 

@@ -105,4 +105,14 @@ func TestLatest(t *testing.T) {
 	if r := got[site]; r.Status != 503 || r.OK || !r.At.Equal(now) {
 		t.Errorf("latest = %+v, want the 503 at %v", r, now)
 	}
+
+	// A newer success must not hide the last failure.
+	s.Insert(ctx, checker.Result{Site: site, At: now.Add(time.Minute), Status: 200, OK: true})
+	fails, err := s.LastFailures(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := fails[site]; r.Status != 503 || !r.At.Equal(now) {
+		t.Errorf("last failure = %+v, want the 503 at %v", r, now)
+	}
 }

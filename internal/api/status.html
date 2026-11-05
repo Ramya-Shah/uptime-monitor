@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>Uptime Status</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1c1c1a; --muted:#6b6b66; --line:#e4e4df;
+          --up:#1f8a4c; --down:#c4362b; --unknown:#8a8a84; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141413; --card:#1e1e1c; --text:#ededea; --muted:#9a9a94; --line:#2e2e2b;
+            --up:#3fbf72; --down:#ef6a5e; --unknown:#77776f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  /* Text and accent take their colour from .up / .down below. */
+  .banner { padding: 14px 18px; border-radius: 10px; font-weight: 600; margin-bottom: 20px;
+            background: var(--card); border: 1px solid var(--line); border-left: 4px solid currentColor; }
+  .wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .name { font-weight: 600; } .name a { color: inherit; text-decoration: none; }
+  .url { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-weight:600; white-space:nowrap; }
+  .pill::before { content:""; width:9px; height:9px; border-radius:50%; background: currentColor; }
+  .up { color: var(--up); } .down { color: var(--down); } .unknown { color: var(--unknown); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .err { color: var(--muted); font-size: 12px; word-break: break-word; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Uptime Status</h1>
+  <p class="sub">Updated {{.Generated}} · refreshes every 30 s</p>
+
+  {{if .Down}}
+    <div class="banner down">{{.Down}} of {{len .Rows}} sites down</div>
+  {{else}}
+    <div class="banner up">All {{len .Rows}} sites up</div>
+  {{end}}
+
+  <div class="wrap">
+  <table>
+    <thead>
+      <tr><th>Site</th><th>State</th><th>Uptime 24h</th><th>Uptime 7d</th><th>p95 24h</th><th>Last check</th><th>Last failure</th></tr>
+    </thead>
+    <tbody>
+    {{range .Rows}}
+      <tr>
+        <td><div class="name"><a href="{{.URL}}">{{.Name}}</a></div><div class="url">{{.URL}}</div></td>
+        <td><span class="pill {{.State}}">{{.State}}</span></td>
+        <td class="num">{{.Up24}}</td>
+        <td class="num">{{.Up7}}</td>
+        <td class="num">{{.P95}}</td>
+        <td class="num muted">{{.Checked}}</td>
+        <td>{{if .FailAt}}<div class="num">{{.FailAt}}</div><div class="err">{{.FailErr}}</div>{{else}}<span class="muted">none recorded</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</main>
+</body>
+</html>

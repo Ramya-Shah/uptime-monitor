@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,14 @@ func TestAPI(t *testing.T) {
 				t.Errorf("unexpected body %s", b)
 			}
 		}},
+		{"/", 200, func(t *testing.T, b []byte) {
+			for _, want := range []string{site, "1 of 1 sites down", `class="pill down"`, "50.00%", "120 ms", "500 Internal Server Error"} {
+				if !bytes.Contains(b, []byte(want)) {
+					t.Errorf("status page missing %q", want)
+				}
+			}
+		}},
+		{"/no-such-page", 404, nil}, // {$} keeps "/" from matching everything
 		{"/api/sites/nope/stats", 404, nil},
 		{"/api/sites/" + site + "/stats?window=banana", 400, nil},
 		{"/api/sites", 405, nil}, // POST below: Go 1.22 routing rejects the wrong method

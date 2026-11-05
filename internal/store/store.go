@@ -119,9 +119,20 @@ func (s *Store) Stats(ctx context.Context, site string, window time.Duration) (S
 
 // Latest returns the most recent result for every site that has one.
 func (s *Store) Latest(ctx context.Context) (map[string]checker.Result, error) {
+	return s.latestWhere(ctx, "TRUE")
+}
+
+// LastFailures returns the most recent failed check for every site that has one.
+func (s *Store) LastFailures(ctx context.Context) (map[string]checker.Result, error) {
+	return s.latestWhere(ctx, "NOT ok")
+}
+
+// latestWhere picks the newest row per site among rows matching cond.
+// cond is always a constant from this file, never user input.
+func (s *Store) latestWhere(ctx context.Context, cond string) (map[string]checker.Result, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT DISTINCT ON (site) site, checked_at, status, latency_ms, ok, error
-		FROM checks ORDER BY site, checked_at DESC`)
+		FROM checks WHERE `+cond+` ORDER BY site, checked_at DESC`)
 	if err != nil {
 		return nil, err
 	}
