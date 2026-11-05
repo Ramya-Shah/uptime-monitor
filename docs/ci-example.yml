@@ -1,0 +1,85 @@
+# Example workflow for the TaskForge repo (.github/workflows/deploy.yml there).
+# It deploys a tagged release to GKE, then runs `uptime-monitor verify`.
+# If the release is unhealthy, verify exits 1, the job fails, and the
+# Deployments are rolled back to the previous version.
+#
+# Not active in this repo: it lives in docs/ so it never runs here.
+#
+# One-time setup in the TaskForge repo:
+#   secrets.GCP_WIF_PROVIDER  Workload Identity Federation provider (no JSON key stored)
+#   secrets.GCP_DEPLOY_SA     service account with roles/container.developer
+#                             and roles/artifactregistry.writer
+
+name: deploy-taskforge
+
+on:
+  push:
+    tags: ["v*"] # e.g. git tag v1.2.0 && git push --tags
+
+permissions:
+  contents: read
+  id-token: write # lets the job get a short-lived GCP token via OIDC
+
+concurrency: deploy-prod # never run two deploys at once
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev/taskforge-k8s/taskforge
+  HEALTH_URL: https://taskforge.136.80.52.40.sslip.io/healthz
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: taskforge
+          location: us-central1
+          project_id: taskforge-k8s
+
+      - name: Build and push images
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+          docker build -t "$REGISTRY/api:$TAG"    --target api    backend && docker push "$REGISTRY/api:$TAG"
+          docker build -t "$REGISTRY/worker:$TAG" --target worker backend && docker push "$REGISTRY/worker:$TAG"
+          docker build -t "$REGISTRY/admin:$TAG"  frontend                && docker push "$REGISTRY/admin:$TAG"
+
+      - name: Deploy (rolling update)
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          sed -i "s/newTag: .*/newTag: $TAG/" k8s/prod/kustomization.yaml
+          kubectl apply -k k8s/prod
+          for d in api worker admin; do
+            kubectl -n taskforge rollout status "deploy/$d" --timeout=5m
+          done
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      # Pods being Ready only means Kubernetes' probes passed inside the cluster.
+      # This checks the real public path (DNS, load balancer, ingress, TLS, app)
+      # 10 times over ~30 s and fails on any error or a slow p95.
+      - name: Verify release
+        id: verify
+        run: |
+          go run github.com/Ramya-Shah/uptime-monitor/cmd/uptime-monitor@main \
+            verify --url "$HEALTH_URL" --checks 10 --interval 3s --max-p95 800ms
+
+      - name: Roll back if verify failed
+        if: failure() && steps.verify.outcome == 'failure'
+        run: |
+          for d in api worker admin; do
+            kubectl -n taskforge rollout undo "deploy/$d"
+            kubectl -n taskforge rollout status "deploy/$d" --timeout=5m
+          done

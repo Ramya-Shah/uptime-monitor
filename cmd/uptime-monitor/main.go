@@ -1,7 +1,8 @@
 // Command uptime-monitor checks a list of sites on an interval,
-// stores results in Postgres and serves a JSON API.
+// stores results in Postgres and serves a JSON API and status page.
 //
-//	uptime-monitor run -config sites.yaml   (needs DATABASE_URL)
+//	uptime-monitor run -config sites.yaml       (needs DATABASE_URL)
+//	uptime-monitor verify --url URL [flags]     (post-deploy check for CI)
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/Ramya-Shah/uptime-monitor/internal/checker"
 	"github.com/Ramya-Shah/uptime-monitor/internal/config"
 	"github.com/Ramya-Shah/uptime-monitor/internal/store"
+	"github.com/Ramya-Shah/uptime-monitor/internal/verify"
 )
 
 func main() {
@@ -32,8 +34,10 @@ func main() {
 	switch cmd {
 	case "run":
 		err = run(args)
+	case "verify":
+		os.Exit(verifyCmd(args)) // 0 healthy, 1 unhealthy, 2 bad usage
 	default:
-		err = fmt.Errorf("unknown command %q (want: run)", cmd)
+		err = fmt.Errorf("unknown command %q (want: run, verify)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -104,6 +108,35 @@ func run(args []string) error {
 	}
 	log.Info("stopped cleanly")
 	return nil
+}
+
+// verifyCmd is the CI release check:
+//
+//	uptime-monitor verify --url https://host/healthz --checks 10 --interval 3s --max-p95 800ms
+func verifyCmd(args []string) int {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError) // bad flags exit 2
+	var o verify.Options
+	fs.StringVar(&o.URL, "url", "", "URL to poll (required)")
+	fs.IntVar(&o.Checks, "checks", 10, "number of checks")
+	fs.DurationVar(&o.Interval, "interval", 3*time.Second, "time between checks")
+	fs.DurationVar(&o.Timeout, "timeout", 5*time.Second, "timeout per check")
+	fs.DurationVar(&o.MaxP95, "max-p95", 800*time.Millisecond, "fail if p95 latency is above this")
+	fs.Parse(args)
+
+	if o.URL == "" || o.Checks < 1 || o.Interval < 0 || o.Timeout <= 0 || o.MaxP95 <= 0 {
+		fmt.Fprintln(os.Stderr, "usage: uptime-monitor verify --url URL [--checks N] [--interval D] [--timeout D] [--max-p95 D]")
+		return 2
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	rep := verify.Run(ctx, checker.NewClient(), o)
+	rep.Print(os.Stdout)
+	if !rep.Pass() {
+		return 1
+	}
+	return 0
 }
 
 func envOr(key, def string) string {
